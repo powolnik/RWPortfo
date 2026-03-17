@@ -747,8 +747,9 @@ function loop(ts) {
 requestAnimationFrame(loop);
 
 // ── Enter choice ──────────────────────────────────────────
-const enterChoice = document.getElementById('enter-choice');
 function showEnterChoice() {
+  const enterChoice = document.getElementById('enter-choice');
+  if (!enterChoice) return;
   enterChoice.classList.add('visible');
   document.getElementById('btn-portfolio').addEventListener('click', () => {
     enterChoice.style.transition = 'opacity 0.3s ease';

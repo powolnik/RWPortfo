@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>portfolio-game // LOADING</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #08081a;
+      --accent: #6060ff;
+      --font:   'Courier New', monospace;
+    }
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: rgba(180,180,230,0.85);
+      font-family: var(--font);
+      overflow: hidden;
+    }
+
+    canvas#bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+    #ui {
+      position: relative; z-index: 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100vh; gap: 0;
+    }
+
+    /* terminal window */
+    .term {
+      width: min(640px, 92vw);
+      background: #0a0a1e;
+      border: 1px solid rgba(96,96,255,0.35);
+      border-radius: 8px;
+      box-shadow: 0 0 60px rgba(60,60,200,0.25), 0 0 120px rgba(30,30,100,0.18);
+      overflow: hidden;
+    }
+    .term-bar {
+      display: flex; align-items: center; gap: 7px;
+      padding: 10px 14px;
+      background: rgba(96,96,255,0.08);
+      border-bottom: 1px solid rgba(96,96,255,0.18);
+    }
+    .dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
+    .term-title {
+      flex: 1; text-align: center;
+      font-size: 12px; color: rgba(160,160,210,0.6); letter-spacing: 0.12em;
+    }
+    .term-body {
+      padding: 28px 32px 28px;
+      min-height: 220px;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+
+    .line { display: block; white-space: pre; font-size: clamp(12px,1.6vw,14px); line-height: 1.9; }
+    .cmd  { color: #8080ff; }
+    .ok   { color: #28c840; }
+    .info { color: rgba(160,160,220,0.65); }
+    .warn { color: #ffbd2e; }
+    .err  { color: #ff5f57; }
+
+    .blink-cursor {
+      display: inline-block; color: #6060ff;
+      animation: blink 0.75s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* progress bar */
+    #prog-wrap {
+      margin: 18px 0 4px;
+      height: 6px;
+      background: rgba(60,60,180,0.18);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    #prog-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #6060ff, #9060ff);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      box-shadow: 0 0 8px rgba(96,96,255,0.6);
+    }
+    #prog-label {
+      font-size: 11px;
+      color: rgba(120,120,200,0.5);
+      letter-spacing: 0.1em;
+      margin-bottom: 22px;
+    }
+
+    /* back button */
+    #back-btn {
+      display: none;
+      margin-top: 28px;
+      font-family: var(--font);
+      font-size: 13px; letter-spacing: 0.12em;
+      border: 1px solid rgba(96,96,255,0.4);
+      background: rgba(10,10,30,0.7);
+      color: rgba(160,160,220,0.8); cursor: pointer;
+      padding: 11px 38px; border-radius: 6px;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    #back-btn:hover {
+      background: rgba(50,50,180,0.22);
+      border-color: rgba(130,130,255,0.85);
+      color: #fff;
+    }
+
+    /* status footer */
+    #status-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between;
+      padding: 7px 20px;
+      font-size: 0.52rem; letter-spacing: 0.12em;
+      color: rgba(80,80,160,0.45);
+      border-top: 1px solid rgba(96,96,255,0.1);
+      background: rgba(8,8,26,0.7);
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<div id="ui">
+  <div class="term">
+    <div class="term-bar">
+      <span class="dot" style="background:#ff5f57"></span>
+      <span class="dot" style="background:#ffbd2e"></span>
+      <span class="dot" style="background:#28c840"></span>
+      <span class="term-title">portfolio-game.exe</span>
+    </div>
+    <div class="term-body">
+      <div id="lines"></div>
+      <div id="prog-wrap" style="display:none"><div id="prog-bar"></div></div>
+      <div id="prog-label"></div>
+      <span class="blink-cursor" id="cursor">█</span>
+    </div>
+  </div>
+  <button id="back-btn" onclick="window.location.href='../index.html'">[ ← back to portfolio ]</button>
+</div>
+
+<div id="status-bar">
+  <span>RW // PORTFOLIO-GAME</span>
+  <span id="fps-el">FPS —</span>
+  <span id="time-el">T 0.000</span>
+</div>
+
+<script>
+// ── background canvas ──────────────────────────────────────────────
+const cv = document.getElementById('bg');
+const cx = cv.getContext('2d');
+let W, H;
+function resize() { W = cv.width = window.innerWidth; H = cv.height = window.innerHeight; }
+resize(); window.addEventListener('resize', resize);
+const mouse = { x: 0, y: 0 };
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+let t0 = null, total = 0, frames = 0, fps = 0, _ff = 0, _ft = 0;
+const fpsEl = document.getElementById('fps-el'), timeEl = document.getElementById('time-el');
+function bgLoop(ts) {
+  if (!t0) { t0 = ts; mouse.x = W/2; mouse.y = H/2; }
+  const dt = Math.min((ts-t0)/1000, 0.05); t0 = ts; total += dt; frames++;
+  _ff++; if (ts - _ft >= 1000) { fps = Math.round(_ff*1000/(ts-_ft)); _ff=0; _ft=ts; fpsEl.textContent=`FPS  ${fps}`; }
+  timeEl.textContent = `T  ${total.toFixed(3)}`;
+  cx.clearRect(0,0,W,H);
+  const g = cx.createRadialGradient(mouse.x,mouse.y,0,mouse.x,mouse.y,Math.min(W,H)*0.55);
+  g.addColorStop(0,'rgba(40,30,100,0.18)'); g.addColorStop(1,'rgba(8,8,26,0)');
+  cx.fillStyle=g; cx.fillRect(0,0,W,H);
+  const GR=48, sc=(total*18)%GR;
+  for(let y=-sc;y<H+GR;y+=GR) for(let x=-sc;x<W+GR;x+=GR){
+    const d=Math.hypot(x-mouse.x,y-mouse.y), p=Math.max(0,1-d/320);
+    const a=0.18+0.12*Math.sin(total*1.4+(x+y)*0.009)+p*0.3;
+    cx.fillStyle=`rgba(60,80,180,${a})`; cx.fillRect(x+GR/2-1.5,y+GR/2-1.5,3,3);
+  }
+  requestAnimationFrame(bgLoop);
+}
+requestAnimationFrame(bgLoop);
+
+// ── terminal sequence ──────────────────────────────────────────────
+const linesEl  = document.getElementById('lines');
+const progWrap = document.getElementById('prog-wrap');
+const progBar  = document.getElementById('prog-bar');
+const progLbl  = document.getElementById('prog-label');
+const cursor   = document.getElementById('cursor');
+const backBtn  = document.getElementById('back-btn');
+
+function addLine(cls, text) {
+  const el = document.createElement('span');
+  el.className = 'line ' + cls;
+  el.textContent = text;
+  linesEl.insertBefore(el, cursor);
+}
+
+const SEQ = [
+  { fn: () => addLine('cmd',  'radek@portfolio:~$ ./portfolio-game.wasm'),  delay: 0   },
+  { fn: () => addLine('info', 'Loading WebAssembly runtime...'),             delay: 320 },
+  { fn: () => { progWrap.style.display='block'; animProg(0, 100, 1200); },  delay: 400 },
+  { fn: () => addLine('err',  '[ERROR]  build artifact not found: game.wasm'), delay: 1700 },
+  { fn: () => addLine('warn', '[WARN ]  game is still under construction'), delay: 180 },
+  { fn: () => addLine('info', 'Expected stack:  C++ · SDL2 · Emscripten'), delay: 240 },
+  { fn: () => addLine('info', 'Status:          work in progress 🔧'),      delay: 200 },
+  { fn: () => addLine('cmd',  'radek@portfolio:~$ echo "check back soon."'), delay: 350 },
+  { fn: () => addLine('ok',   'check back soon.'),                          delay: 0   },
+  { fn: showBack,                                                            delay: 400 },
+];
+
+function animProg(from, to, dur) {
+  const start = performance.now();
+  function step(now) {
+    const p = Math.min((now - start) / dur, 1);
+    const v = from + (to - from) * p;
+    progBar.style.width = v + '%';
+    progLbl.textContent = v < 100 ? `loading... ${Math.round(v)}%` : `error — see above`;
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function showBack() {
+  cursor.style.display = 'none';
+  backBtn.style.display = 'inline-block';
+}
+
+let i = 0;
+function runNext() {
+  if (i >= SEQ.length) return;
+  const item = SEQ[i++];
+  setTimeout(() => { item.fn(); runNext(); }, item.delay);
+}
+setTimeout(runNext, 300);
+</script>
+</body>
+</html>

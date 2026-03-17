@@ -190,7 +190,7 @@ function addLine(cls, text) {
   const el = document.createElement('span');
   el.className = 'line ' + cls;
   el.textContent = text;
-  linesEl.insertBefore(el, cursor);
+  linesEl.appendChild(el);
 }
 
 const SEQ = [

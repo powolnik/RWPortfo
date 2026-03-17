@@ -621,8 +621,9 @@
   function dismiss() {
     if (dismissed) return;
     dismissed = true;
+    showEnterChoice();
     overlay.classList.add('fade-out');
-    setTimeout(() => { try { overlay.remove(); } catch(e){} showEnterChoice(); }, 350);
+    setTimeout(() => { try { overlay.remove(); } catch(e){} }, 650);
   }
 
   overlay.addEventListener('click', dismiss);

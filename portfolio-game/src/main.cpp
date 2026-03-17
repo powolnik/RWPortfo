@@ -1,6 +1,6 @@
 /**
  * Portfolio Game - Template
- * C++ / SDL2 / WebAssembly
+ * C++ / SDL2 / WebAssembly 
  *
  * This is the entry point and game loop skeleton.
  * Game logic, scenes and content are intentionally left empty.

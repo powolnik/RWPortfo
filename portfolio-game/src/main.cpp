@@ -101,7 +101,7 @@ static const Color COL_BLACK       = {  0,   0,   0, 255};
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-enum class GameScene { MENU, PLAYING, PAUSED, WIN };
+enum class GameScene { MENU, PLAYING, PAUSED, WIN, CINEMATIC };
 enum class Zone { BEACH, FOREST, WETLAND };
 enum class TrashType { BOTTLE, CAN, BAG, TIRE, BARREL };
 enum class AnimalType { CRAB, BIRD, DEER, FROG, FISH };
@@ -322,6 +322,17 @@ struct GameState {
     bool milestone60fired = false;
     bool milestone80fired = false;
     bool milestone100fired = false;
+
+    // Phase 5 — Dismantling
+    bool  toolLibDismantled   = false;
+    float dismantleHoldTimer  = 0.0f;
+    int   structuresRemaining = 1;  // Tool Library counts as 1
+
+    // Phase 5 — Cinematic
+    int   cinematicCard   = 0;
+    float cinematicTimer  = 0.0f;
+    float cinematicFade   = 0.0f;
+    float creditsScrollY  = 0.0f;
 
     // Menu
     int menuSelection = 0;
@@ -1095,12 +1106,10 @@ static void updatePlaying(float dt) {
             g.popupMsg = buf;
             g.popupTimer = 2.0f;
 
-            // Check win
+            // Check all trash collected
             if (p.trashCollected >= p.totalTrash) {
                 g.allTrashCollected = true;
-                g.scene = GameScene::WIN;
-                g.popupMsg = "Island fully restored!";
-                g.popupTimer = 5.0f;
+                // Win check happens at BI 100% milestone
             }
             } // end tool-compatible pickup
         }
@@ -1229,6 +1238,25 @@ static void updatePlaying(float dt) {
         g.popupTimer = 1.5f;
     }
 
+    // Phase 5: Dismantle Tool Library (hold [E] 2 seconds)
+    if (!g.toolLibDismantled && g.currentZoneIdx == 0 &&
+        g.toolLib.playerInRange(g.player.pos.x, g.player.pos.y) &&
+        g.input.action)
+    {
+        g.dismantleHoldTimer += dt;
+        if (g.dismantleHoldTimer >= 2.0f) {
+            g.toolLibDismantled     = true;
+            g.structuresRemaining   = 0;
+            g.inv.credits          += 3;
+            g.dismantleHoldTimer    = 0.0f;
+            g.popupMsg   = "Structure dismantled! +3 cr";
+            g.popupTimer = 3.0f;
+            spawnParticles({g.toolLib.x, g.toolLib.y}, {200, 180, 60, 255}, 25, 120.0f);
+        }
+    } else {
+        g.dismantleHoldTimer = 0.0f;
+    }
+
     // Phase 2: credits popup timer
     if (g.creditsPopupTimer > 0) g.creditsPopupTimer -= dt;
 
@@ -1300,6 +1328,23 @@ static void updatePlaying(float dt) {
         g.popupMsg   = "The island breathes again! Full restoration!";
         g.popupTimer = 6.0f;
         spawnParticles({640, 360}, {255, 215, 60, 255}, 60, 140.0f);
+        if (g.structuresRemaining == 0) {
+            g.scene = GameScene::CINEMATIC;
+            g.cinematicCard  = 0;
+            g.cinematicTimer = 0.0f;
+            g.cinematicFade  = 0.0f;
+            g.creditsScrollY = 0.0f;
+        }
+    }
+    // Phase 5: win trigger (bi==100 AND structures cleared)
+    if (g.ecoMeter >= 100.0f && g.structuresRemaining == 0 &&
+        g.milestone100fired && g.scene == GameScene::PLAYING)
+    {
+        g.scene = GameScene::CINEMATIC;
+        g.cinematicCard  = 0;
+        g.cinematicTimer = 0.0f;
+        g.cinematicFade  = 0.0f;
+        g.creditsScrollY = 0.0f;
     }
 
     // Phase 4.3 — Mindfulness moment update
@@ -1458,12 +1503,40 @@ static void updateWin(float dt) {
     }
 }
 
+static void updateCinematic(float dt) {
+    g.cinematicTimer += dt;
+    if (g.cinematicCard < 4) {
+        // Each card: 0.5s fade-in, 3s hold, 0.5s fade-out = 4s total
+        float t = g.cinematicTimer;
+        if (t < 0.5f)       g.cinematicFade = t / 0.5f;
+        else if (t < 3.5f)  g.cinematicFade = 1.0f;
+        else if (t < 4.0f)  g.cinematicFade = 1.0f - (t - 3.5f) / 0.5f;
+        else {
+            g.cinematicCard++;
+            g.cinematicTimer = 0.0f;
+            g.cinematicFade  = 0.0f;
+        }
+    } else {
+        // Credits roll — scroll up at 40px/s
+        g.creditsScrollY -= 40.0f * dt;
+        // End when credits scroll off screen (after ~10s)
+        if (g.cinematicTimer > 10.0f) {
+            g.scene = GameScene::WIN;
+        }
+    }
+    // Any key skips to WIN
+    if (g.input.enterPressed || g.input.pausePressed) {
+        g.scene = GameScene::WIN;
+    }
+}
+
 static void update(float dt) {
     switch (g.scene) {
-        case GameScene::MENU:    updateMenu(dt); break;
-        case GameScene::PLAYING: updatePlaying(dt); break;
-        case GameScene::PAUSED:  updatePaused(dt); break;
-        case GameScene::WIN:     updateWin(dt); break;
+        case GameScene::MENU:      updateMenu(dt); break;
+        case GameScene::PLAYING:   updatePlaying(dt); break;
+        case GameScene::PAUSED:    updatePaused(dt); break;
+        case GameScene::WIN:       updateWin(dt); break;
+        case GameScene::CINEMATIC: updateCinematic(dt); break;
     }
 }
 
@@ -1963,6 +2036,7 @@ static void drawRecycleStation(const RecycleStation& rs) {
 
 static void drawToolLibraryStation(const ToolLibraryStation& tl) {
     if (g.currentZoneIdx != 0) return;  // only shown in Beach
+    if (g.toolLibDismantled) return;    // Phase 5: dismantled
     float sx = tl.x - g.camera.x;
     float sy = tl.y - g.camera.y;
     if (sx < -70 || sx > WINDOW_W + 70) return;
@@ -1994,6 +2068,13 @@ static void drawToolLibraryStation(const ToolLibraryStation& tl) {
         drawRect((int)sx - 12, (int)(sy - 46), 8, 2, COL_UI_ACCENT);
         drawRect((int)sx - 12, (int)(sy - 42), 6, 2, COL_UI_ACCENT);
         drawRect((int)sx - 12, (int)(sy - 38), 8, 2, COL_UI_ACCENT);
+    }
+    // Phase 5: dismantle progress bar
+    if (!g.toolLibDismantled && nearby && g.dismantleHoldTimer > 0) {
+        float prog = g.dismantleHoldTimer / 2.0f;
+        int barW3 = (int)(56 * prog);
+        drawRect((int)sx - 28, (int)(sy - 62), 56, 8, {10, 10, 26, 200});
+        drawRect((int)sx - 28, (int)(sy - 62), barW3, 8, {220, 180, 40, 255});
     }
 }
 
@@ -2377,6 +2458,81 @@ static void drawZoneGate() {
     }
 }
 
+static void drawCinematic() {
+    // Black bg
+    SDL_SetRenderDrawColor(g.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(g.renderer);
+
+    static const char* CARDS[] = {
+        "the island breathes",
+        "the water runs clear",
+        "the raft departs",
+        "thank you for playing"
+    };
+
+    Uint8 alpha = (Uint8)(g.cinematicFade * 255.0f);
+
+    if (g.cinematicCard < 4) {
+        // Draw card text as a glowing rectangle placeholder
+        int cardW = 500, cardH = 60;
+        int cx = (WINDOW_W - cardW) / 2;
+        int cy = WINDOW_H / 2 - cardH / 2;
+        SDL_SetRenderDrawBlendMode(g.renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(g.renderer, 255, 255, 255, (Uint8)(alpha * 0.1f));
+        SDL_Rect bg = {cx - 20, cy - 20, cardW + 40, cardH + 40};
+        SDL_RenderFillRect(g.renderer, &bg);
+        // White horizontal bars (simulate text lines)
+        int lineCount = (int)strlen(CARDS[g.cinematicCard]) / 5 + 1;  // rough word count
+        for (int i = 0; i < lineCount && i < 5; i++) {
+            int lineW = cardW - i * 40;
+            int lineX = cx + i * 20;
+            int lineY = cy + 10 + i * 14;
+            SDL_SetRenderDrawColor(g.renderer, 255, 255, 255, alpha);
+            SDL_Rect lr = {lineX, lineY, lineW, 6};
+            SDL_RenderFillRect(g.renderer, &lr);
+        }
+        // Card number dots (bottom)
+        for (int i = 0; i < 4; i++) {
+            Uint8 dotA = (i == g.cinematicCard) ? 255 : 60;
+            SDL_SetRenderDrawColor(g.renderer, 255, 255, 255, dotA);
+            SDL_Rect dot = {WINDOW_W/2 - 30 + i*20, WINDOW_H - 60, 8, 8};
+            SDL_RenderFillRect(g.renderer, &dot);
+        }
+    } else {
+        // Credits roll
+        SDL_SetRenderDrawBlendMode(g.renderer, SDL_BLENDMODE_BLEND);
+        float baseY = WINDOW_H + g.creditsScrollY;
+        // Draw credit "lines" as white bars of varying width
+        int lineWidths[] = {300, 200, 0, 200, 180, 0, 200, 150, 0, 180, 160, 0,
+                            220, 140, 100, 120, 0, 60};
+        int numLines = (int)(sizeof(lineWidths)/sizeof(lineWidths[0]));
+        for (int i = 0; i < numLines; i++) {
+            if (lineWidths[i] == 0) continue;
+            int lw = lineWidths[i];
+            int lx = (WINDOW_W - lw) / 2;
+            int ly = (int)(baseY + i * 30);
+            if (ly < -10 || ly > WINDOW_H + 10) continue;
+            float dist = std::abs(ly - WINDOW_H/2.0f) / (WINDOW_H / 2.0f);
+            Uint8 a = (Uint8)(std::max(0.0f, 1.0f - dist) * 220.0f);
+            SDL_SetRenderDrawColor(g.renderer, 255, 255, 255, a);
+            SDL_Rect lr = {lx, ly, lw, 5};
+            SDL_RenderFillRect(g.renderer, &lr);
+        }
+        // Green leaf (pixel circle) at end
+        float leafY = baseY + numLines * 30 + 20;
+        if (leafY > 0 && leafY < WINDOW_H) {
+            SDL_SetRenderDrawColor(g.renderer, 60, 200, 80, 180);
+            int cr = 20;
+            for (int dy = -cr; dy <= cr; dy++) {
+                int dx2 = (int)std::sqrt((float)(cr*cr - dy*dy));
+                SDL_RenderDrawLine(g.renderer,
+                    WINDOW_W/2 - dx2, (int)(leafY + dy),
+                    WINDOW_W/2 + dx2, (int)(leafY + dy));
+            }
+        }
+    }
+}
+
 static void render() {
     switch (g.scene) {
         case GameScene::MENU:
@@ -2426,6 +2582,9 @@ static void render() {
             break;
         case GameScene::WIN:
             drawWin();
+            break;
+        case GameScene::CINEMATIC:
+            drawCinematic();
             break;
     }
 

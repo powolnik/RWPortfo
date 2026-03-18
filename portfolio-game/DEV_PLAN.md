@@ -175,20 +175,20 @@
 > ~1 week
 
 ### 5.1 — Structure dismantling
-- [ ] Tag all player-placed objects (Tool Library stations are "owned")
-- [ ] Add dismantle interaction: hold [E] 2 seconds → remove structure, +3cr
-- [ ] Track `structures_remaining` count in game state
+- [x] Tag all player-placed objects (Tool Library stations are "owned")
+- [x] Add dismantle interaction: hold [E] 2 seconds → remove structure, +3cr
+- [x] Track `structures_remaining` count in game state
 
 ### 5.2 — Win condition check
-- [ ] After every BI update: check `bi >= 100 && structures_remaining == 0`
-- [ ] If true: trigger ending cinematic
+- [x] After every BI update: check `bi >= 100 && structures_remaining == 0`
+- [x] If true: trigger ending cinematic
 
 ### 5.3 — Ending cinematic
-- [ ] Fade to black scripted sequence
-- [ ] Text cards: 3–4 lines ("the island breathes", "the raft departs")
+- [x] Fade to black scripted sequence
+- [x] Text cards: 3–4 lines ("the island breathes", "the raft departs")
 - [ ] Ambient soundscape plays over cards
-- [ ] Credits roll (scrolling text renderer)
-- [ ] Return to main menu or desktop
+- [x] Credits roll (scrolling text renderer)
+- [x] Return to main menu or desktop
 
 ---
 

@@ -35,6 +35,7 @@
 #include "animation.h"
 #include "entity.h"
 #include "audio.h"
+#include "economy.h"
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -129,7 +130,8 @@ struct Player {
 
 struct TrashItem {
     Vec2 pos;
-    TrashType type;
+    TrashType  type;
+    LitterType litterType = LitterType::PLASTIC;
     bool collected = false;
     float bobPhase = 0;   // for floating trash
     bool inWater = false;
@@ -190,6 +192,8 @@ struct GameState {
         bool actionPressed = false;
         bool pausePressed = false;
         bool enterPressed = false;
+        bool returnPressed = false;  // R key — return tool
+        bool photoPressed = false;   // F key — drone photo
     } input;
 
     // Scene
@@ -236,6 +240,17 @@ struct GameState {
 
     // Win state
     bool allTrashCollected = false;
+
+    // Phase 2 — Economy
+    Inventory            inv;
+    RecycleStation       recycleStations[5];  // one per zone
+    ToolLibraryStation   toolLib;
+    ToolLibraryUI        toolLibUI;
+    bool  organicUpgrade  = false;  // Tomek's reward: organic gives +3cr
+    int   creditsPopupVal = 0;
+    float creditsPopupTimer = 0;
+    // Tool return key
+    bool  returnToolPressed = false;
 
     // Menu
     int menuSelection = 0;
@@ -555,6 +570,14 @@ static void generateZoneTrash(int zoneIdx) {
         item.type    = spec.type;
         item.inWater = spec.water;
         item.bobPhase = randf(0, 6.28f);
+        // Assign LitterType from TrashType
+        switch (item.type) {
+            case TrashType::BOTTLE: item.litterType = LitterType::PLASTIC;   break;
+            case TrashType::CAN:    item.litterType = LitterType::PLASTIC;   break;
+            case TrashType::BAG:    item.litterType = LitterType::PLASTIC;   break;
+            case TrashType::TIRE:   item.litterType = LitterType::MACHINERY; break;
+            case TrashType::BARREL: item.litterType = LitterType::CHEMICAL;  break;
+        }
         g.trash.push_back(item);
     }
 
@@ -615,6 +638,25 @@ static void generateWorld() {
 
     // Register animation clips on player
     registerPlayerClips(g.player.anim);
+
+    // Phase 2: Place recycle stations (one per zone, ~70% across each zone)
+    // Beach zone width ≈ 3840px each
+    g.recycleStations[0] = { 2800.0f, 0.0f, 0 };   // Beach
+    g.recycleStations[1] = { 2600.0f, 0.0f, 1 };   // Shallows
+    g.recycleStations[2] = { 2800.0f, 0.0f, 2 };   // Meadow
+    g.recycleStations[3] = { 2600.0f, 0.0f, 3 };   // Forest
+    g.recycleStations[4] = { 2400.0f, 0.0f, 4 };   // Hill
+    // Y will be set per-frame to ground level in update, but init to a sane default
+    for (auto& rs : g.recycleStations) {
+        rs.y = 580.0f;
+    }
+
+    // Tool Library (Beach, near start)
+    g.toolLib = { 500.0f, 580.0f, 0 };
+
+    // Reset inventory
+    g.inv = Inventory{};
+    g.inv.heldTool = ToolType::HAND_TROWEL;  // start with free trowel
 
     generateZoneTrash(0);  // Beach trash
 
@@ -720,6 +762,12 @@ static void handleEvents() {
                         g.input.enter = true;
                         g.input.enterPressed = true;
                         break;
+                    case SDL_SCANCODE_R:
+                        g.input.returnPressed = true;
+                        break;
+                    case SDL_SCANCODE_F:
+                        g.input.photoPressed = true;
+                        break;
                     default: break;
                 }
                 break;
@@ -789,7 +837,9 @@ static void updatePlaying(float dt) {
         p.facingRight = moveX > 0;
     }
 
-    float speed = p.inWater ? SWIM_SPEED : PLAYER_SPEED;
+    // Phase 2: Burden slow when carrying > MAX_CARRY
+    float burdenMult = g.inv.hasBurden ? 0.55f : 1.0f;
+    float speed = p.inWater ? SWIM_SPEED * burdenMult : PLAYER_SPEED * burdenMult;
     p.vel.x = moveX * speed;
 
     // Vertical
@@ -883,9 +933,20 @@ static void updatePlaying(float dt) {
             }
         }
         if (nearestIdx >= 0) {
+            // Phase 2: check tool compatibility
+            LitterType lt = g.trash[nearestIdx].litterType;
+            if (!toolCanPickup(g.inv.heldTool, lt)) {
+                // Wrong tool — show hint
+                const Tool* ti = getToolInfo(g.inv.heldTool);
+                char buf[128];
+                snprintf(buf, sizeof(buf), "Need a better tool for %s waste!", litterTypeName(lt));
+                g.popupMsg   = buf;
+                g.popupTimer = 2.0f;
+            } else {
             g.trash[nearestIdx].collected = true;
             p.trashCollected++;
             p.pickupCooldown = 0.2f;
+            g.inv.addItem(lt);
 
             // Particles!
             spawnParticles(g.trash[nearestIdx].pos, {60, 200, 80, 255}, 12, 100.0f);
@@ -922,8 +983,95 @@ static void updatePlaying(float dt) {
                 g.popupMsg = "Island fully restored!";
                 g.popupTimer = 5.0f;
             }
+            } // end tool-compatible pickup
         }
     }
+
+    // Phase 2: Recycle station interaction
+    RecycleStation& activeStation = g.recycleStations[g.currentZoneIdx];
+    // Snap station Y to ground
+    activeStation.y = (float)getTilemapGroundY(g.currentZoneMap, (int)activeStation.x) - 28.0f;
+
+    if (g.input.actionPressed && !g.toolLibUI.open &&
+        activeStation.playerInRange(p.pos.x, p.pos.y) && g.inv.carriedCount > 0)
+    {
+        int earned = g.inv.recycle(g.organicUpgrade);
+        g.creditsPopupVal   = earned;
+        g.creditsPopupTimer = 3.0f;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "+%d credits! Total: %d cr", earned, g.inv.credits);
+        g.popupMsg   = buf;
+        g.popupTimer = 3.0f;
+        spawnParticles({activeStation.x, activeStation.y}, {255, 215, 50, 255}, 20, 120.0f);
+    }
+
+    // Phase 2: Tool Library station — snap Y
+    if (g.currentZoneIdx == 0) {
+        g.toolLib.y = (float)getTilemapGroundY(g.currentZoneMap, (int)g.toolLib.x) - 32.0f;
+    }
+
+    // Tool Library — open/close UI
+    if (g.input.actionPressed && g.currentZoneIdx == 0 &&
+        g.toolLib.playerInRange(p.pos.x, p.pos.y) && !activeStation.playerInRange(p.pos.x, p.pos.y))
+    {
+        g.toolLibUI.open = !g.toolLibUI.open;
+        g.toolLibUI.selection = 1;  // default to Hand trowel
+    }
+
+    // Tool Library UI navigation
+    if (g.toolLibUI.open) {
+        // Up/Down to navigate
+        if (g.input.up || g.input.down) {
+            // handled via jumpPressed/actionPressed — use raw keys once per frame
+        }
+        // We'll use jump (space) for scroll up, crouch (S) for scroll down in menu
+        // Actually use left/right for prev/next in the catalogue
+        static bool prevLeft  = false;
+        static bool prevRight = false;
+        if (g.input.left && !prevLeft) {
+            g.toolLibUI.selection--;
+            if (g.toolLibUI.selection < 1) g.toolLibUI.selection = 5;
+        }
+        if (g.input.right && !prevRight) {
+            g.toolLibUI.selection++;
+            if (g.toolLibUI.selection > 5) g.toolLibUI.selection = 1;
+        }
+        prevLeft  = g.input.left;
+        prevRight = g.input.right;
+
+        // Enter to confirm borrow
+        if (g.input.enterPressed) {
+            const Tool& chosen = TOOL_CATALOGUE[g.toolLibUI.selection];
+            if (g.inv.credits >= chosen.cost) {
+                g.inv.credits  -= chosen.cost;
+                g.inv.heldTool  = chosen.type;
+                char buf[128];
+                snprintf(buf, sizeof(buf), "Borrowed: %s  (-%d cr)", chosen.name, chosen.cost);
+                g.popupMsg   = buf;
+                g.popupTimer = 3.0f;
+                g.toolLibUI.open = false;
+            } else {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "Not enough credits! Need %d cr", chosen.cost);
+                g.popupMsg   = buf;
+                g.popupTimer = 2.0f;
+            }
+        }
+        // Escape closes
+        if (g.input.pausePressed) {
+            g.toolLibUI.open = false;
+        }
+    }
+
+    // Tool return [R]
+    if (g.input.returnPressed && g.inv.heldTool != ToolType::HAND_TROWEL) {
+        g.inv.heldTool = ToolType::HAND_TROWEL;
+        g.popupMsg   = "Tool returned.";
+        g.popupTimer = 1.5f;
+    }
+
+    // Phase 2: credits popup timer
+    if (g.creditsPopupTimer > 0) g.creditsPopupTimer -= dt;
 
     // Eco meter smooth animation
     if (g.ecoMeter < g.targetEco) {
@@ -1492,6 +1640,149 @@ static void drawParticles() {
     }
 }
 
+static void drawRecycleStation(const RecycleStation& rs) {
+    float sx = rs.x - g.camera.x;
+    float sy = rs.y - g.camera.y;
+    if (sx < -60 || sx > WINDOW_W + 60) return;
+
+    // Base platform
+    drawRect((int)sx - 24, (int)(sy + 20), 48, 8, {100, 80, 50, 255});
+    // Bin body (green)
+    drawRect((int)sx - 18, (int)(sy - 16), 36, 36, {40, 140, 60, 255});
+    drawRect((int)sx - 18, (int)(sy - 16), 36, 4, {30, 120, 50, 255});
+    // Recycle arrows (crude 3-arrow symbol)
+    setColor({200, 255, 200, 220});
+    SDL_RenderDrawLine(g.renderer, (int)sx - 8, (int)(sy + 8), (int)sx, (int)(sy - 8));
+    SDL_RenderDrawLine(g.renderer, (int)sx,     (int)(sy - 8), (int)sx + 8, (int)(sy + 8));
+    SDL_RenderDrawLine(g.renderer, (int)sx + 8, (int)(sy + 8), (int)sx - 8, (int)(sy + 8));
+    // Lid
+    drawRect((int)sx - 20, (int)(sy - 20), 40, 6, {30, 120, 50, 255});
+
+    // "E" prompt if player is nearby
+    float dx = g.player.pos.x - rs.x;
+    float dy = g.player.pos.y - rs.y;
+    bool nearby = (dx*dx + dy*dy) < 70.0f * 70.0f;
+    if (nearby && g.inv.carriedCount > 0) {
+        drawRect((int)sx - 18, (int)(sy - 38), 36, 16, {10, 30, 10, 200});
+        // E key marker
+        drawRect((int)sx - 12, (int)(sy - 36), 2, 12, COL_ECO_HIGH);
+        drawRect((int)sx - 12, (int)(sy - 36), 8, 2, COL_ECO_HIGH);
+        drawRect((int)sx - 12, (int)(sy - 31), 6, 2, COL_ECO_HIGH);
+        drawRect((int)sx - 12, (int)(sy - 26), 8, 2, COL_ECO_HIGH);
+        // item count badge
+        drawRect((int)sx + 0, (int)(sy - 35), 14, 10, {20, 80, 30, 200});
+    }
+    // Chimney smoke puff
+    float puff = std::sin(g.totalTime * 2.0f + rs.x * 0.01f);
+    drawCircle((int)(sx + 10), (int)(sy - 28 + puff * 2), 4, {180, 220, 180, 80});
+}
+
+static void drawToolLibraryStation(const ToolLibraryStation& tl) {
+    if (g.currentZoneIdx != 0) return;  // only shown in Beach
+    float sx = tl.x - g.camera.x;
+    float sy = tl.y - g.camera.y;
+    if (sx < -70 || sx > WINDOW_W + 70) return;
+
+    // Base
+    drawRect((int)sx - 28, (int)(sy + 22), 56, 8, {80, 80, 100, 255});
+    // Cabinet body (teal)
+    drawRect((int)sx - 24, (int)(sy - 32), 48, 54, {40, 100, 120, 255});
+    drawRect((int)sx - 24, (int)(sy - 32), 48, 4, {30, 80, 100, 255});
+    // Tool silhouettes (small rects)
+    drawRect((int)sx - 16, (int)(sy - 24), 4, 16, {200, 200, 160, 200}); // trowel
+    drawRect((int)sx - 6,  (int)(sy - 28), 3, 20, {160, 200, 160, 200}); // saw
+    drawRect((int)sx + 4,  (int)(sy - 20), 12, 4, {160, 180, 220, 200}); // drone
+    drawRect((int)sx + 4,  (int)(sy - 10), 10, 8, {80, 180, 120, 200}); // bio-filter
+    // Sign "TL"
+    drawRect((int)sx - 8, (int)(sy + 4), 16, 12, {10, 10, 26, 200});
+    drawRect((int)sx - 6, (int)(sy + 6), 2, 8, {160, 220, 240, 255});   // T stroke
+    drawRect((int)sx - 6, (int)(sy + 6), 8, 2, {160, 220, 240, 255});   // T top
+    drawRect((int)sx + 4, (int)(sy + 6), 2, 8, {160, 220, 240, 255});   // L stroke
+    drawRect((int)sx + 4, (int)(sy + 12), 6, 2, {160, 220, 240, 255});  // L foot
+
+    // "E" prompt if nearby
+    float dx = g.player.pos.x - tl.x;
+    float dy = g.player.pos.y - tl.y;
+    bool nearby = (dx*dx + dy*dy) < 80.0f * 80.0f;
+    if (nearby) {
+        drawRect((int)sx - 18, (int)(sy - 48), 36, 14, {10, 20, 30, 200});
+        drawRect((int)sx - 12, (int)(sy - 46), 2, 10, COL_UI_ACCENT);
+        drawRect((int)sx - 12, (int)(sy - 46), 8, 2, COL_UI_ACCENT);
+        drawRect((int)sx - 12, (int)(sy - 42), 6, 2, COL_UI_ACCENT);
+        drawRect((int)sx - 12, (int)(sy - 38), 8, 2, COL_UI_ACCENT);
+    }
+}
+
+static void drawToolLibraryUI() {
+    if (!g.toolLibUI.open) return;
+
+    int uiW = 520, uiH = 320;
+    int uiX = (WINDOW_W - uiW) / 2;
+    int uiY = (WINDOW_H - uiH) / 2;
+
+    // Background panel
+    drawRect(uiX, uiY, uiW, uiH, {10, 14, 26, 240});
+    setColor(COL_UI_ACCENT);
+    SDL_Rect border = {uiX, uiY, uiW, uiH};
+    SDL_RenderDrawRect(g.renderer, &border);
+
+    // Title bar
+    drawRect(uiX, uiY, uiW, 28, {20, 20, 50, 255});
+    drawRect(uiX, uiY + 26, uiW, 2, COL_UI_ACCENT);
+
+    // Credits display top-right of panel
+    drawRect(uiX + uiW - 100, uiY + 4, 96, 20, {30, 30, 60, 200});
+    {
+        char crBuf[24];
+        snprintf(crBuf, sizeof(crBuf), "%d CR avail", g.inv.credits);
+        // Gold bar indicator
+        int goldW = (int)std::min(92.0f, g.inv.credits * 4.0f);
+        drawRect(uiX + uiW - 98, uiY + 6, goldW, 16, {180, 140, 30, 200});
+    }
+
+    // Tool list (skip index 0 = NONE)
+    int listStartY = uiY + 40;
+    for (int i = 1; i <= 5; i++) {
+        const Tool& t = TOOL_CATALOGUE[i];
+        bool selected  = (i == g.toolLibUI.selection);
+        bool current   = (t.type == g.inv.heldTool);
+        bool canAfford = (g.inv.credits >= t.cost);
+
+        int rowY = listStartY + (i - 1) * 52;
+        Color rowBg = selected ? Color{30, 40, 80, 220} : Color{16, 18, 36, 180};
+        drawRect(uiX + 12, rowY, uiW - 24, 48, rowBg);
+
+        if (selected) {
+            setColor(COL_UI_ACCENT);
+            SDL_Rect rb = {uiX + 12, rowY, uiW - 24, 48};
+            SDL_RenderDrawRect(g.renderer, &rb);
+        }
+        if (current) {
+            drawRect(uiX + 14, rowY + 2, 4, 44, {60, 200, 80, 255});
+        }
+
+        // Cost badge
+        Color costCol = canAfford ? Color{60, 200, 80, 255} : Color{200, 60, 60, 255};
+        drawRect(uiX + uiW - 80, rowY + 14, 60, 20, {10, 10, 26, 200});
+        // Cost bar fill
+        int costFill = (int)(56.0f * (t.cost == 0 ? 1.0f : std::min(1.0f, (float)g.inv.credits / t.cost)));
+        drawRect(uiX + uiW - 78, rowY + 16, costFill, 16, costCol);
+
+        // Tool name row (crude pixel indicator)
+        drawRect(uiX + 22, rowY + 16, 10, 16, {100, 160, 200, 200}); // tool icon placeholder
+        drawRect(uiX + 36, rowY + 10, (int)(t.cost == 0 ? 40 : t.cost * 5), 4, costCol);
+    }
+
+    // Footer controls hint
+    drawRect(uiX, uiY + uiH - 26, uiW, 26, {20, 20, 50, 255});
+    drawRect(uiX, uiY + uiH - 26, uiW, 1, COL_UI_ACCENT);
+    // ← → indicator
+    drawRect(uiX + 20,       uiY + uiH - 20, 10, 2, {160, 160, 255, 200});
+    drawRect(uiX + uiW - 30, uiY + uiH - 20, 10, 2, {160, 160, 255, 200});
+    // ENTER key rect
+    drawRect(uiX + uiW/2 - 20, uiY + uiH - 22, 40, 18, {30, 30, 60, 200});
+}
+
 static void drawHUD() {
     // Eco Meter (top-left)
     drawRect(16, 16, 204, 28, COL_UI_BG);
@@ -1520,6 +1811,35 @@ static void drawHUD() {
     drawRect(52, 24, 8, 2, COL_WHITE);
     drawRect(52, 34, 8, 2, COL_WHITE);
     drawRect(58, 24, 2, 12, COL_WHITE);
+
+    // Phase 2: Credits display (below eco bar)
+    {
+        char crBuf[32];
+        snprintf(crBuf, sizeof(crBuf), "%d CR", g.inv.credits);
+        // Gold credit pill
+        drawRect(16, 50, 80, 20, {10, 10, 26, 200});
+        drawRect(18, 52, (int)std::min(76.0f, g.inv.credits * 2.0f), 16, {220, 180, 40, 200});
+        // coin icon (small circle)
+        drawCircle(28, 60, 7, {220, 180, 40, 255});
+        drawCircle(28, 60, 4, {255, 215, 50, 255});
+    }
+
+    // Phase 2: Carry count bar (below credits)
+    {
+        int carry = g.inv.carriedCount;
+        int maxC  = MAX_CARRY;
+        drawRect(16, 76, 104, 16, {10, 10, 26, 180});
+        Color carryCol = (carry > maxC) ? COL_ECO_LOW : (carry > maxC/2 ? COL_ECO_MID : COL_ECO_HIGH);
+        int barW2 = (int)(100.0f * std::min(1.0f, carry / (float)maxC));
+        drawRect(18, 78, barW2, 12, carryCol);
+        // bag icon
+        drawCircle(112, 84, 6, {180, 140, 80, 255});
+        // Burden warning flash
+        if (g.inv.hasBurden) {
+            float flash = 0.5f + 0.5f * std::sin(g.totalTime * 8);
+            drawRect(16, 76, 104, 16, {200, 50, 50, (Uint8)(100 * flash)});
+        }
+    }
 
     // Trash counter (top-right area)
     int cx = WINDOW_W - 120;
@@ -1788,7 +2108,11 @@ static void render() {
             drawAnimals();
             drawPlayer();
             drawParticles();
+            // Phase 2: economy objects
+            drawRecycleStation(g.recycleStations[g.currentZoneIdx]);
+            if (g.currentZoneIdx == 0) drawToolLibraryStation(g.toolLib);
             drawHUD();
+            drawToolLibraryUI();
             drawZoneGate();
             break;
         case GameScene::PAUSED:
@@ -1801,6 +2125,8 @@ static void render() {
             drawAnimals();
             drawPlayer();
             drawParticles();
+            drawRecycleStation(g.recycleStations[g.currentZoneIdx]);
+            if (g.currentZoneIdx == 0) drawToolLibraryStation(g.toolLib);
             drawHUD();
             drawPaused();
             break;

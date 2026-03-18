@@ -86,25 +86,25 @@
 > ~2 weeks | Goal: Creator Credits loop fully functional
 
 ### 2.1 — Litter classification
-- [ ] Add `LitterType` enum: `PLASTIC`, `ORGANIC`, `CHEMICAL`, `MACHINERY`
-- [ ] Assign credits per type: plastic +1, organic compost +2, structure dismantle +3
-- [ ] Update pickup logic to award credits by type
+- [x] Add `LitterType` enum: `PLASTIC`, `ORGANIC`, `CHEMICAL`, `MACHINERY`
+- [x] Assign credits per type: plastic +1, organic compost +2, structure dismantle +3
+- [x] Update pickup logic to award credits by type
 
 ### 2.2 — Inventory & Burden system
-- [ ] Implement carry limit: max 10 items
-- [ ] Apply Burden slow (speed penalty) when carrying >10
-- [ ] HUD indicator for current carry count
+- [x] Implement carry limit: max 10 items
+- [x] Apply Burden slow (speed penalty) when carrying >10
+- [x] HUD indicator for current carry count
 
 ### 2.3 — Drop-off / recycle points
-- [ ] Place recycle station per zone (Beach, Meadow, Forest)
-- [ ] Interaction: dump carried items → award credits → clear inventory
-- [ ] Visual feedback: credit counter ticks up
+- [x] Place recycle station per zone (Beach, Meadow, Forest)
+- [x] Interaction: dump carried items → award credits → clear inventory
+- [x] Visual feedback: credit counter ticks up
 
 ### 2.4 — Tool Library
-- [ ] Define tool structs: Hand trowel (free), Pruning saw (3cr), Drone camera (5cr), Bio-filter kit (8cr), Crane arm (12cr)
-- [ ] Tool borrow UI: press [E] at Tool Library station → menu opens
-- [ ] Lock tool-specific litter types until correct tool is borrowed
-- [ ] Return tool on zone exit or manual [R] return action
+- [x] Define tool structs: Hand trowel (free), Pruning saw (3cr), Drone camera (5cr), Bio-filter kit (8cr), Crane arm (12cr)
+- [x] Tool borrow UI: press [E] at Tool Library station → menu opens
+- [x] Lock tool-specific litter types until correct tool is borrowed
+- [x] Return tool on zone exit or manual [R] return action
 
 ---
 

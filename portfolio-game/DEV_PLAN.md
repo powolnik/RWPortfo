@@ -216,24 +216,24 @@
 > ~4 weeks
 
 ### 7.1 — Diegetic HUD
-- [ ] Replace debug HUD with carved stone BI meter on Beach
-- [ ] Credit counter shown as shell/token pile near player
-- [ ] Carry count shown as bag icon only
+- [x] Replace debug HUD with carved stone BI meter on Beach
+- [x] Credit counter shown as shell/token pile near player
+- [x] Carry count shown as bag icon only
 
 ### 7.2 — Bug fixing & playtesting
-- [ ] Full playthrough test (3–4 hr target)
-- [ ] Edge cases: BI gate re-lock, inventory overflow, tool return on death
-- [ ] Performance: maintain 60fps in WASM at 1280×720
+- [x] Full playthrough test (3–4 hr target)
+- [x] Edge cases: BI gate re-lock, inventory overflow, tool return on death
+- [x] Performance: maintain 60fps in WASM at 1280×720
 
 ### 7.3 — itch.io web demo build
-- [ ] Final Emscripten compile with `-O3` + `--closure 1`
-- [ ] Update `shell.html` for itch.io embed (800×600 iframe)
-- [ ] Test in Chrome, Firefox, Safari
+- [x] Final Emscripten compile with `-O3` + `--closure 1`
+- [x] Update `shell.html` for itch.io embed (800×600 iframe)
+- [x] Test in Chrome, Firefox, Safari
 
 ### 7.4 — Steam PC build
-- [ ] Install SDL2 natively, compile native Linux/Windows binary
-- [ ] Integrate Steamworks SDK (optional for MVP)
-- [ ] Prepare Steam page: description, screenshots, capsule art
+- [x] Install SDL2 natively, compile native Linux/Windows binary
+- [x] Integrate Steamworks SDK (optional for MVP)
+- [x] Prepare Steam page: description, screenshots, capsule art
 
 ---
 

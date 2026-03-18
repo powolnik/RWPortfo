@@ -4,6 +4,9 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Zielony Pływak // Portfolio Game</title>
+  <!-- itch.io embed compatibility -->
+  <meta name="itch:embed" content="true"/>
+  <meta name="viewport" content="width=800,height=600"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -149,6 +152,9 @@
     }],
     canvas: (function() {
       var c = document.getElementById('canvas');
+      // itch.io 800×600 fallback size
+      if (c && !c.width)  { c.width  = 800; }
+      if (c && !c.height) { c.height = 600; }
       c.addEventListener('webglcontextlost', function(e) {
         alert('WebGL context lost. Please reload.');
         e.preventDefault();

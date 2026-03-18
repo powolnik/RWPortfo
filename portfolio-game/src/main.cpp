@@ -923,6 +923,8 @@ static void updateMenu(float dt) {
     g.menuAnim += dt;
     if (g.input.enterPressed || g.input.jumpPressed) {
         g.scene = GameScene::PLAYING;
+        // Phase 7: ensure no borrowed tools persist across restarts
+        g.inv.heldTool = ToolType::HAND_TROWEL;
         generateWorld();
         g.player.pos = {400, 500};
         g.ecoMeter = 0;
@@ -1073,6 +1075,11 @@ static void updatePlaying(float dt) {
             p.pickupCooldown = 0.2f;
             playSFX("pickup");  // Phase 6: pickup chime
             g.inv.addItem(lt);
+            // Phase 7: extreme overflow guard — hard-cap at MAX_CARRY + 5
+            if (g.inv.carriedCount >= MAX_CARRY + 5) {
+                g.inv.carriedCount = MAX_CARRY + 5;
+                g.inv.hasBurden = true;
+            }
 
             // Phase 3: favour tracking
             if (lt == LitterType::PLASTIC && g.currentZoneIdx == 0)
@@ -2005,7 +2012,10 @@ static void drawPlayer() {
 }
 
 static void drawParticles() {
-    for (auto& p : g.particles) {
+    // Phase 7: performance guard — render only the newest 200 particles
+    size_t pStart = g.particles.size() > 200 ? g.particles.size() - 200 : 0;
+    for (size_t i = pStart; i < g.particles.size(); i++) {
+        const Particle& p = g.particles[i];
         float sx = p.pos.x - g.camera.x;
         float sy = p.pos.y - g.camera.y;
         float alpha = p.life / p.maxLife;
@@ -2168,138 +2178,219 @@ static void drawToolLibraryUI() {
 }
 
 static void drawHUD() {
-    // Eco Meter (top-left)
-    drawRect(16, 16, 204, 28, COL_UI_BG);
-    drawRect(18, 18, 200, 24, {30, 30, 50, 200});
+    // ── Phase 7: Diegetic HUD ─────────────────────────────────────────────
 
-    // Eco bar
-    float eco01 = g.ecoMeter / 100.0f;
-    int barW = (int)(196 * eco01);
-    Color barCol;
-    if (eco01 < 0.33f) barCol = lerpColor(COL_ECO_LOW, COL_ECO_MID, eco01 / 0.33f);
-    else if (eco01 < 0.66f) barCol = lerpColor(COL_ECO_MID, COL_ECO_HIGH, (eco01-0.33f)/0.33f);
-    else barCol = COL_ECO_HIGH;
-    drawRect(20, 20, barW, 20, barCol);
-
-    // Eco label "ECO" - pixel text
-    drawRect(24, 24, 2, 12, COL_WHITE); // E
-    drawRect(24, 24, 8, 2, COL_WHITE);
-    drawRect(24, 29, 6, 2, COL_WHITE);
-    drawRect(24, 34, 8, 2, COL_WHITE);
-
-    drawRect(38, 24, 2, 12, COL_WHITE); // C
-    drawRect(38, 24, 8, 2, COL_WHITE);
-    drawRect(38, 34, 8, 2, COL_WHITE);
-
-    drawRect(52, 24, 2, 12, COL_WHITE); // O
-    drawRect(52, 24, 8, 2, COL_WHITE);
-    drawRect(52, 34, 8, 2, COL_WHITE);
-    drawRect(58, 24, 2, 12, COL_WHITE);
-
-    // Phase 2: Credits display (below eco bar)
+    // ── Stone BI Meter (top-left, replaces ECO bar) ───────────────────────
     {
-        char crBuf[32];
-        snprintf(crBuf, sizeof(crBuf), "%d CR", g.inv.credits);
-        // Gold credit pill
-        drawRect(16, 50, 80, 20, {10, 10, 26, 200});
-        drawRect(18, 52, (int)std::min(76.0f, g.inv.credits * 2.0f), 16, {220, 180, 40, 200});
-        // coin icon (small circle)
-        drawCircle(28, 60, 7, {220, 180, 40, 255});
-        drawCircle(28, 60, 4, {255, 215, 50, 255});
-    }
+        // Carved stone slab background
+        drawRect(16, 12, 220, 40, {50, 48, 44, 230});
+        // Inset border (lighter outer edge)
+        setColor({90, 88, 82, 200});
+        SDL_Rect border = {16, 12, 220, 40};
+        SDL_RenderDrawRect(g.renderer, &border);
+        // Inner shadow edges
+        drawRect(17, 13, 218, 1, {30, 28, 24, 200});
+        drawRect(17, 13, 1,   38, {30, 28, 24, 200});
 
-    // Phase 2: Carry count bar (below credits)
-    {
-        int carry = g.inv.carriedCount;
-        int maxC  = MAX_CARRY;
-        drawRect(16, 76, 104, 16, {10, 10, 26, 180});
-        Color carryCol = (carry > maxC) ? COL_ECO_LOW : (carry > maxC/2 ? COL_ECO_MID : COL_ECO_HIGH);
-        int barW2 = (int)(100.0f * std::min(1.0f, carry / (float)maxC));
-        drawRect(18, 78, barW2, 12, carryCol);
-        // bag icon
-        drawCircle(112, 84, 6, {180, 140, 80, 255});
-        // Burden warning flash
-        if (g.inv.hasBurden) {
-            float flash = 0.5f + 0.5f * std::sin(g.totalTime * 8);
-            drawRect(16, 76, 104, 16, {200, 50, 50, (Uint8)(100 * flash)});
+        // Tiny leaf icon above the bar (3 stacked green diamond shapes)
+        int lx = 20, ly = 14;
+        drawRect(lx+1, ly,   4, 2, {40, 180, 60, 220});   // bottom diamond
+        drawRect(lx-1, ly-2, 8, 2, {40, 180, 60, 220});
+        drawRect(lx+1, ly-4, 4, 2, {40, 180, 60, 220});
+        drawRect(lx+2, ly-6, 2, 2, {50, 200, 70, 200});   // stem tip
+
+        // "BI" pixel glyphs (3x5 dot-matrix style)
+        int tx = 24, ty = 18;
+        // B — vertical stroke + top/mid/bot bars + right fill
+        drawRect(tx,   ty,     2, 10, {200, 220, 180, 230});
+        drawRect(tx+2, ty,     4,  2, {200, 220, 180, 230});
+        drawRect(tx+2, ty+4,   4,  2, {200, 220, 180, 230});
+        drawRect(tx+2, ty+8,   4,  2, {200, 220, 180, 230});
+        drawRect(tx+6, ty+1,   2,  3, {200, 220, 180, 230});
+        drawRect(tx+6, ty+5,   2,  3, {200, 220, 180, 230});
+        // I — top bar + stem + bot bar
+        tx += 12;
+        drawRect(tx,   ty,     6,  2, {200, 220, 180, 230});
+        drawRect(tx+2, ty+2,   2,  6, {200, 220, 180, 230});
+        drawRect(tx,   ty+8,   6,  2, {200, 220, 180, 230});
+
+        // 10 stone notch segments
+        float eco01 = g.ecoMeter / 100.0f;
+        int segBase = 46;
+        for (int s = 0; s < 10; s++) {
+            bool filled = (s < (int)(eco01 * 10.0f + 0.5f));
+            // Notch recess background
+            drawRect(segBase + s*20, 21, 18, 22, {28, 26, 22, 220});
+            if (filled) {
+                Color segCol;
+                if (eco01 < 0.33f)
+                    segCol = lerpColor({180, 60, 40, 255}, {200, 200, 40, 255}, eco01 / 0.33f);
+                else if (eco01 < 0.66f)
+                    segCol = lerpColor({200, 200, 40, 255}, {50, 180, 60, 255}, (eco01-0.33f)/0.33f);
+                else
+                    segCol = {50, 180, 60, 255};
+                // Filled notch stone
+                drawRect(segBase + s*20 + 1, 22, 16, 20, segCol);
+                // Top highlight
+                drawRect(segBase + s*20 + 1, 22, 16, 2,
+                    {(Uint8)std::min(255, segCol.r+60),
+                     (Uint8)std::min(255, segCol.g+60),
+                     (Uint8)std::min(255, segCol.b+60), 180});
+            } else {
+                // Unfilled — dark stone
+                drawRect(segBase + s*20 + 1, 22, 16, 20, {35, 33, 30, 200});
+            }
         }
     }
 
-    // Trash counter (top-right area)
-    int cx = WINDOW_W - 120;
-    drawRect(cx - 4, 16, 108, 28, COL_UI_BG);
+    // ── Shell Credit Pile (bottom-left, replaces gold pill) ───────────────
+    {
+        int px = 16, py = WINDOW_H - 70;
+        // Dark slab backing
+        drawRect(px - 4, py - 10, 132, 48, {20, 16, 12, 200});
+        setColor({50, 45, 35, 160});
+        SDL_Rect sb = {px - 4, py - 10, 132, 48};
+        SDL_RenderDrawRect(g.renderer, &sb);
 
-    // Trash icon (small bag)
-    drawCircle(cx + 8, 30, 6, COL_TRASH);
+        // 5 shell icons (warm ivory ovals, scattered pile)
+        // Shell = small oval via two rects
+        auto drawShell = [&](int sx, int sy) {
+            drawRect(sx,   sy,   8, 6, {240, 220, 180, 230});
+            drawRect(sx+1, sy-1, 6, 2, {255, 235, 195, 180});
+            drawRect(sx+2, sy+2, 4, 1, {200, 185, 145, 150});
+        };
+        drawShell(px,    py);
+        drawShell(px+14, py+2);
+        drawShell(px+7,  py-4);
+        drawShell(px+26, py);
+        drawShell(px+20, py-3);
 
-    // Counter digits - crude but functional
-    // Show as filled squares proportional to progress
-    int collected = g.player.trashCollected;
-    int total = g.player.totalTrash;
-    float progress = total > 0 ? (float)collected / total : 0;
-    int fillW = (int)(80 * progress);
-    drawRect(cx + 20, 22, 80, 16, {30, 30, 50, 200});
-    drawRect(cx + 20, 22, fillW, 16, {60, 200, 80, 200});
+        // Credit bars — each bar = 10cr, max 10 bars shown
+        int credits = g.inv.credits;
+        int fullBars  = std::min(10, credits / 10);
+        int partial   = credits % 10;
+        int barX = px + 46;
+        int barY = py + 10;
+        for (int b = 0; b < 10; b++) {
+            // Bar background
+            drawRect(barX, barY - b*4, 72, 3, {40, 35, 25, 180});
+            if (b < fullBars) {
+                // Full bar
+                drawRect(barX, barY - b*4, 72, 3, {220, 180, 60, 220});
+                drawRect(barX, barY - b*4, 72, 1, {255, 210, 80, 120});
+            } else if (b == fullBars && partial > 0) {
+                // Partial fill
+                int fw = (int)(72.0f * partial / 10.0f);
+                drawRect(barX, barY - b*4, fw, 3, {200, 160, 40, 200});
+            }
+        }
+    }
 
-    // Zone name display
+    // ── Bag Carry Icon (top-right, replaces carry bar) ────────────────────
+    {
+        int bx = WINDOW_W - 60, by = 16;
+        int carry   = g.inv.carriedCount;
+        bool burden = g.inv.hasBurden;
+
+        // Strap arc (small rects simulate rounded top)
+        drawRect(bx + 3, by,     8, 3, {140, 110, 60, 200});
+        drawRect(bx + 3, by,     3, 5, {140, 110, 60, 200});
+        drawRect(bx + 8, by,     3, 5, {140, 110, 60, 200});
+
+        // Bag body (14×18)
+        Color bagCol = {160, 120, 70, 220};
+        if (burden) {
+            float flash = 0.5f + 0.5f * std::sin(g.totalTime * 8.0f);
+            bagCol = {200, 60, 60, (Uint8)(150 + (int)(flash * 70))};
+        }
+        drawRect(bx, by + 4, 14, 18, bagCol);
+        // Highlight stripe
+        drawRect(bx + 1, by + 5, 12, 2,
+            {(Uint8)std::min(255, bagCol.r + 40),
+             (Uint8)std::min(255, bagCol.g + 40),
+             (Uint8)std::min(255, bagCol.b + 40), 180});
+        // Clasp
+        drawRect(bx + 4, by + 10, 6, 4, {200, 160, 80, 220});
+
+        // Carried item green dots (up to 10)
+        int dotsToShow = std::min(carry, MAX_CARRY);
+        for (int d = 0; d < dotsToShow; d++) {
+            int dx = bx + 2 + (d % 5) * 2;
+            int dy2 = by + 13 + (d / 5) * 3;
+            drawRect(dx, dy2, 2, 2, {80, 220, 80, 220});
+        }
+    }
+
+    // ── Trash counter (top-right, left of bag icon) ───────────────────────
+    {
+        int cx = WINDOW_W - 154; // moved left to make room for bag
+        drawRect(cx - 4, 16, 108, 28, COL_UI_BG);
+
+        // Trash icon (small circle)
+        drawCircle(cx + 8, 30, 6, COL_TRASH);
+
+        // Progress bar
+        int collected = g.player.trashCollected;
+        int total     = g.player.totalTrash;
+        float progress = total > 0 ? (float)collected / total : 0.0f;
+        int fillW = (int)(80 * progress);
+        drawRect(cx + 20, 22, 80, 16, {30, 30, 50, 200});
+        drawRect(cx + 20, 22, fillW, 16, {60, 200, 80, 200});
+    }
+
+    // ── Zone name display (centre) ────────────────────────────────────────
     if (g.zoneNameTimer > 0) {
         float alpha = std::min(1.0f, g.zoneNameTimer);
-        if (g.zoneNameTimer < 0.5f) alpha = g.zoneNameTimer * 2;
+        if (g.zoneNameTimer < 0.5f) alpha = g.zoneNameTimer * 2.0f;
         int nameW = 300;
         int nameX = (WINDOW_W - nameW) / 2;
         int nameY = 80;
         drawRect(nameX, nameY, nameW, 36, {10, 10, 26, (Uint8)(200*alpha)});
-        // Zone indicator line
         drawRect(nameX, nameY + 34, nameW, 2, {96, 96, 255, (Uint8)(200*alpha)});
     }
 
-    // Popup message
+    // ── Popup message ─────────────────────────────────────────────────────
     if (g.popupTimer > 0) {
         float alpha = std::min(1.0f, g.popupTimer);
         int pw = 350;
-        int px = (WINDOW_W - pw) / 2;
-        int py = WINDOW_H - 100;
-        drawRect(px, py, pw, 32, {10, 30, 10, (Uint8)(200*alpha)});
-        drawRect(px, py, 4, 32, {60, 200, 80, (Uint8)(255*alpha)});
+        int pxp = (WINDOW_W - pw) / 2;
+        int pyp = WINDOW_H - 100;
+        drawRect(pxp, pyp, pw, 32, {10, 30, 10, (Uint8)(200*alpha)});
+        drawRect(pxp, pyp, 4, 32, {60, 200, 80, (Uint8)(255*alpha)});
     }
 
-    // Controls hint (bottom-left, fades out)
+    // ── Controls hint (bottom-left, fades out) ────────────────────────────
     float hintAlpha = std::max(0.0f, 1.0f - g.totalTime * 0.1f);
     if (hintAlpha > 0) {
         drawRect(16, WINDOW_H - 48, 300, 32, {10, 10, 26, (Uint8)(180*hintAlpha)});
-        // Arrow/WASD hint line
         drawRect(20, WINDOW_H - 44, 2, 2, {96, 96, 255, (Uint8)(200*hintAlpha)});
         drawRect(24, WINDOW_H - 44, 30, 2, {200, 200, 240, (Uint8)(150*hintAlpha)});
     }
 
-    // Mini-map (bottom-right)
+    // ── Mini-map (bottom-right) ───────────────────────────────────────────
     int mmX = WINDOW_W - 170;
     int mmY = WINDOW_H - 55;
     int mmW = 154;
     int mmH = 40;
     drawRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4, COL_UI_BG);
 
-    // Zone colors on minimap
-    int beachW = (int)(mmW * (float)ZONE_BEACH_END / WORLD_W);
+    int beachW  = (int)(mmW * (float)ZONE_BEACH_END / WORLD_W);
     int forestW = (int)(mmW * (float)(ZONE_FOREST_END - ZONE_FOREST_START) / WORLD_W);
-    int wetW = mmW - beachW - forestW;
-    drawRect(mmX, mmY, beachW, mmH, {220, 200, 160, 100});
-    drawRect(mmX + beachW, mmY, forestW, mmH, {60, 160, 60, 100});
-    drawRect(mmX + beachW + forestW, mmY, wetW, mmH, {100, 80, 50, 100});
+    int wetW    = mmW - beachW - forestW;
+    drawRect(mmX,                    mmY, beachW,  mmH, {220, 200, 160, 100});
+    drawRect(mmX + beachW,           mmY, forestW, mmH, {60,  160,  60, 100});
+    drawRect(mmX + beachW + forestW, mmY, wetW,    mmH, {100,  80,  50, 100});
 
-    // Trash dots on minimap
     for (auto& t : g.trash) {
         if (t.collected) continue;
-        int tx = mmX + (int)(t.pos.x / WORLD_W * mmW);
-        int ty = mmY + mmH/2;
-        drawRect(tx, ty, 2, 2, COL_TRASH);
+        int tmx = mmX + (int)(t.pos.x / WORLD_W * mmW);
+        int tmy = mmY + mmH/2;
+        drawRect(tmx, tmy, 2, 2, COL_TRASH);
     }
 
-    // Player dot on minimap
     int plx = mmX + (int)(g.player.pos.x / WORLD_W * mmW);
     drawRect(plx - 1, mmY + mmH/2 - 1, 4, 4, COL_PLAYER_BODY);
 
-    // Camera view indicator
     int cvx = mmX + (int)(g.camera.x / WORLD_W * mmW);
     int cvw = (int)((float)WINDOW_W / WORLD_W * mmW);
     setColor({96, 96, 255, 80});
@@ -2308,20 +2399,16 @@ static void drawHUD() {
     SDL_SetRenderDrawColor(g.renderer, 96, 96, 255, 150);
     SDL_RenderDrawRect(g.renderer, &cvr);
 
-    // DEBUG: camera.x progress bar (bottom of screen, 4px tall)
-    // Shows scroll position from 0 (left) to WORLD_W-WINDOW_W (right)
+    // Camera scroll progress bar (bottom of screen)
     {
-        const int maxScroll = WORLD_W - WINDOW_W; // 2560
+        const int maxScroll = WORLD_W - WINDOW_W;
         float camPct = (maxScroll > 0) ? std::min(1.0f, g.camera.x / (float)maxScroll) : 0.0f;
         int barW = (int)(camPct * WINDOW_W);
-        // Dark bg
         drawRect(0, WINDOW_H - 6, WINDOW_W, 6, {10, 10, 26, 180});
-        // Progress fill — green at start, yellow at mid, orange near end
         Color dbgCol = {50, 220, 100, 200};
         if (camPct > 0.66f) dbgCol = {220, 160, 50, 200};
         else if (camPct > 0.33f) dbgCol = {180, 220, 50, 200};
         drawRect(0, WINDOW_H - 6, barW, 6, dbgCol);
-        // Tick at start and end
         drawRect(0, WINDOW_H - 6, 2, 6, COL_WHITE);
         drawRect(WINDOW_W - 2, WINDOW_H - 6, 2, 6, COL_WHITE);
     }
@@ -2449,6 +2536,9 @@ static void drawWin() {
 static void drawZoneGate() {
     if (g.currentZoneIdx >= NUM_ZONES - 1) return;  // last zone, no gate
 
+    // Phase 7 bug-fix: re-evaluate lock state every frame so gate re-locks
+    // visually if ecoMeter somehow drops below threshold (eco never goes down
+    // in normal play, but this guard future-proofs the visual).
     float nextThreshold = ZONE_BI_THRESHOLDS[g.currentZoneIdx + 1] * 100.0f;
     bool  unlocked = g.ecoMeter >= nextThreshold;
     Color gateCol  = unlocked ? COL_GATE_UNLOCKED : COL_GATE_LOCKED;

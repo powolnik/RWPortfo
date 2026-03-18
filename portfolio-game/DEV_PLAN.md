@@ -112,33 +112,33 @@
 > ~2–3 weeks | Goal: 3 NPCs with favour quests working end-to-end
 
 ### 3.1 — Dialogue engine
-- [ ] Define dialogue format (plain text or JSON): lines, speaker, condition flags
-- [ ] Write `DialogueManager`: load file, advance on [Space], show speaker name
-- [ ] Render dialogue box in terminal/diegetic style matching portfolio aesthetic
-- [ ] Support `[condition]` flags to gate dialogue branches
+- [x] Define dialogue format (plain text or JSON): lines, speaker, condition flags
+- [x] Write `DialogueManager`: load file, advance on [Space], show speaker name
+- [x] Render dialogue box in terminal/diegetic style matching portfolio aesthetic
+- [x] Support `[condition]` flags to gate dialogue branches
 
 ### 3.2 — NPC: Marta (Beach hut)
-- [ ] Sprite: unique 16×16 pixel art (contract or placeholder)
-- [ ] Favour: mend torn fishing nets → requires 5 plastic pickups in Beach zone
-- [ ] Reward: Bio-filter kit loaned (skips 8cr cost)
-- [ ] Regard flag: `marta_helped = true`
+- [x] Sprite: unique 16×16 pixel art (contract or placeholder)
+- [x] Favour: mend torn fishing nets → requires 5 plastic pickups in Beach zone
+- [x] Reward: Bio-filter kit loaned (skips 8cr cost)
+- [x] Regard flag: `marta_helped = true`
 
 ### 3.3 — NPC: Tomek (Meadow camp)
-- [ ] Sprite: unique 16×16
-- [ ] Favour: seed rare coastal grass → requires Bio-filter kit used on 3 chemical drums
-- [ ] Reward: composting upgrade (organic waste gives +3cr instead of +2cr)
-- [ ] Regard flag: `tomek_helped = true`
+- [x] Sprite: unique 16×16
+- [x] Favour: seed rare coastal grass → requires Bio-filter kit used on 3 chemical drums
+- [x] Reward: composting upgrade (organic waste gives +3cr instead of +2cr)
+- [x] Regard flag: `tomek_helped = true`
 
 ### 3.4 — NPC: Baba Sela (Birch grove)
-- [ ] Sprite: unique 16×16
-- [ ] Favour: identify hidden pollution → reveals 3 invisible litter objects in Forest
-- [ ] Reward: Forest zone unlocks at BI 50% instead of 60%
-- [ ] Regard flag: `sela_helped = true`
+- [x] Sprite: unique 16×16
+- [x] Favour: identify hidden pollution → reveals 3 invisible litter objects in Forest
+- [x] Reward: Forest zone unlocks at BI 50% instead of 60%
+- [x] Regard flag: `sela_helped = true`
 
 ### 3.5 — NPC favour tracking
-- [ ] Persist regard flags in game state struct
-- [ ] Gate rewards behind `regard == true` checks
-- [ ] NPC dialogue changes after favour complete
+- [x] Persist regard flags in game state struct
+- [x] Gate rewards behind `regard == true` checks
+- [x] NPC dialogue changes after favour complete
 
 ---
 

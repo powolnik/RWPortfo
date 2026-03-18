@@ -101,6 +101,7 @@ struct Inventory {
     int credits       = 0;     // total Creator Credits earned
     ToolType heldTool = ToolType::HAND_TROWEL;  // tool currently borrowed
     bool hasBurden    = false; // true when carriedCount > MAX_CARRY
+    int organicBonusCredits = 2; // default +2 per organic; upgraded to +3 by Tomek
 
     // Carried litter breakdown (for recycle payout calculation)
     int plasticHeld   = 0;
@@ -123,7 +124,7 @@ struct Inventory {
     int recycle(bool organicUpgrade = false) {
         int earned = 0;
         earned += plasticHeld   * creditsForLitter(LitterType::PLASTIC);
-        earned += (organicUpgrade ? 3 : 2) * organicHeld;   // Tomek upgrade: +3 instead of +2
+        earned += organicBonusCredits * organicHeld;   // Tomek upgrade: +3 instead of +2 (via organicBonusCredits)
         earned += chemicalHeld  * creditsForLitter(LitterType::CHEMICAL);
         earned += machineryHeld * creditsForLitter(LitterType::MACHINERY);
         credits += earned;

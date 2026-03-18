@@ -36,6 +36,8 @@
 #include "entity.h"
 #include "audio.h"
 #include "economy.h"
+#include "dialogue.h"
+#include "npc.h"
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -247,6 +249,54 @@ struct GameState {
     ToolLibraryStation   toolLib;
     ToolLibraryUI        toolLibUI;
     bool  organicUpgrade  = false;  // Tomek's reward: organic gives +3cr
+
+    // Phase 3 — NPCs
+    NPC marta = make_marta();
+    NPC tomek = make_tomek();
+    NPC sela  = make_sela();
+    DialogueManager dialogueMgr;
+
+    // Dialogue scripts (inline — no file I/O needed for WASM)
+    DialogueScript ds_marta_intro = {"marta_intro", {
+        {"Marta",  "Cześć! Widziałeś? Sieci pełne plastiku...", ""},
+        {"Marta",  "Jeśli zbierzesz 5 kawałków plastiku z plaży, pożyczę ci bio-filtr.", ""},
+        {"Player", "(Zadanie: zbierz 5 plastików na plaży)", ""}
+    }};
+    DialogueScript ds_marta_done = {"marta_done", {
+        {"Marta",  "Dziękuję! Trzymaj — bio-filtr jest twój.", ""},
+        {"Marta",  "Uważaj na chemikalia przy skałach.", ""}
+    }};
+    DialogueScript ds_marta_rewarded = {"marta_rewarded", {
+        {"Marta",  "Jesteś prawdziwym przyjacielem plaży. 🌊", ""}
+    }};
+    DialogueScript ds_tomek_intro = {"tomek_intro", {
+        {"Tomek",  "Hej! Te beczki chemiczne zabijają trawę.", ""},
+        {"Tomek",  "Użyj bio-filtru na trzech beczkach, a nauczę cię kompostowania.", ""},
+        {"Player", "(Zadanie: użyj bio-filtru na 3 beczkach chemicznych)", ""}
+    }};
+    DialogueScript ds_tomek_done = {"tomek_done", {
+        {"Tomek",  "Świetna robota! Kompost wart więcej — organika daje +3 kredyty.", ""}
+    }};
+    DialogueScript ds_tomek_rewarded = {"tomek_rewarded", {
+        {"Tomek",  "Łąka oddycha swobodnie. Dobra robota, partnerze. 🌿", ""}
+    }};
+    DialogueScript ds_sela_intro = {"sela_intro", {
+        {"Baba Sela", "Wyczuwam truciznę ukrytą głębiej w lesie...", ""},
+        {"Baba Sela", "Otworzę twoje oczy. Trzy miejsca. Szukaj.", ""},
+        {"Player",    "(3 ukryte śmieci odkryte w Lesie!)", ""}
+    }};
+    DialogueScript ds_sela_rewarded = {"sela_rewarded", {
+        {"Baba Sela", "Las pamięta twoją troskę. Wrota otworzą się wcześniej.", ""}
+    }};
+
+    // Favour: plastic pickups in Beach zone (for Marta)
+    int beachPlasticPickups = 0;
+    // Favour: bio-filter uses on chemical (for Tomek)
+    int tomekBioFilterUses  = 0;
+    // Sela hidden litter revealed
+    bool selaLitterRevealed = false;
+    // Forest unlock override (Sela reward)
+    float forestUnlockBI    = 0.60f;
     int   creditsPopupVal = 0;
     float creditsPopupTimer = 0;
     // Tool return key
@@ -747,8 +797,40 @@ static void handleEvents() {
                     case SDL_SCANCODE_S:
                     case SDL_SCANCODE_DOWN:  g.input.down = true; break;
                     case SDL_SCANCODE_SPACE:
-                        g.input.jump = true;
-                        g.input.jumpPressed = true;
+                        if (g.dialogueMgr.active) {
+                            g.dialogueMgr.advance();
+                            // Check if dialogue just ended — apply rewards
+                            if (!g.dialogueMgr.active) {
+                                // Marta: after intro, set INTRO_DONE
+                                if (g.marta.state == NPCFavourState::NOT_MET)
+                                    g.marta.state = NPCFavourState::INTRO_DONE;
+                                // Marta: after done, give bio-filter
+                                else if (g.marta.state == NPCFavourState::FAVOUR_DONE) {
+                                    g.marta.state = NPCFavourState::REWARDED;
+                                    // Grant bio-filter tool for free
+                                    g.inv.heldTool = ToolType::BIO_FILTER_KIT;
+                                    g.dialogueMgr.marta_helped = true;
+                                }
+                                // Tomek: after intro, INTRO_DONE
+                                if (g.tomek.state == NPCFavourState::NOT_MET)
+                                    g.tomek.state = NPCFavourState::INTRO_DONE;
+                                else if (g.tomek.state == NPCFavourState::FAVOUR_DONE) {
+                                    g.tomek.state = NPCFavourState::REWARDED;
+                                    g.inv.organicBonusCredits = 3; // composting upgrade
+                                    g.dialogueMgr.tomek_helped = true;
+                                }
+                                // Sela: reveal hidden litter + reduce forest unlock
+                                if (g.sela.state == NPCFavourState::NOT_MET) {
+                                    g.sela.state = NPCFavourState::REWARDED;
+                                    g.selaLitterRevealed = true;
+                                    g.forestUnlockBI = 0.50f; // reduced from 60% to 50%
+                                    g.dialogueMgr.sela_helped = true;
+                                }
+                            }
+                        } else {
+                            g.input.jump = true;
+                            g.input.jumpPressed = true;
+                        }
                         break;
                     case SDL_SCANCODE_E:
                         g.input.action = true;
@@ -878,7 +960,7 @@ static void updatePlaying(float dt) {
     if (p.pos.x > WORLD_W - 32 && !g.zoneTransitioning) {
         int nextIdx = g.currentZoneIdx + 1;
         if (nextIdx < NUM_ZONES) {
-            float requiredBI = ZONE_BI_THRESHOLDS[nextIdx] * 100.0f;  // in percent
+            float requiredBI = (nextIdx == 3 ? g.forestUnlockBI : ZONE_BI_THRESHOLDS[nextIdx]) * 100.0f;  // in percent
             if (g.ecoMeter >= requiredBI) {
                 // Unlock — switch zone
                 switchZone(nextIdx);
@@ -947,6 +1029,12 @@ static void updatePlaying(float dt) {
             p.trashCollected++;
             p.pickupCooldown = 0.2f;
             g.inv.addItem(lt);
+
+            // Phase 3: favour tracking
+            if (lt == LitterType::PLASTIC && g.currentZoneIdx == 0)
+                g.beachPlasticPickups++;
+            if (lt == LitterType::CHEMICAL && g.inv.heldTool == ToolType::BIO_FILTER_KIT)
+                g.tomekBioFilterUses++;
 
             // Particles!
             spawnParticles(g.trash[nearestIdx].pos, {60, 200, 80, 255}, 12, 100.0f);
@@ -1060,6 +1148,46 @@ static void updatePlaying(float dt) {
         // Escape closes
         if (g.input.pausePressed) {
             g.toolLibUI.open = false;
+        }
+    }
+
+    // Phase 3: NPC interaction (E key)
+    if (g.input.actionPressed && !g.dialogueMgr.active) {
+        int wx = (int)g.player.pos.x; // world x (player pos already in world coords)
+        int wy = (int)g.player.pos.y;
+        // Marta
+        if (g.marta.zoneIndex == g.currentZoneIdx && g.marta.isNear(wx, wy)) {
+            if (g.marta.state == NPCFavourState::NOT_MET || g.marta.state == NPCFavourState::INTRO_DONE) {
+                if (g.beachPlasticPickups >= 5 && g.marta.state == NPCFavourState::INTRO_DONE) {
+                    g.marta.state = NPCFavourState::FAVOUR_DONE;
+                    g.dialogueMgr.start(&g.ds_marta_done);
+                } else {
+                    g.dialogueMgr.start(&g.ds_marta_intro);
+                }
+            } else if (g.marta.state == NPCFavourState::REWARDED) {
+                g.dialogueMgr.start(&g.ds_marta_rewarded);
+            }
+        }
+        // Tomek
+        if (g.tomek.zoneIndex == g.currentZoneIdx && g.tomek.isNear(wx, wy)) {
+            if (g.tomek.state == NPCFavourState::NOT_MET || g.tomek.state == NPCFavourState::INTRO_DONE) {
+                if (g.tomekBioFilterUses >= 3 && g.tomek.state == NPCFavourState::INTRO_DONE) {
+                    g.tomek.state = NPCFavourState::FAVOUR_DONE;
+                    g.dialogueMgr.start(&g.ds_tomek_done);
+                } else {
+                    g.dialogueMgr.start(&g.ds_tomek_intro);
+                }
+            } else if (g.tomek.state == NPCFavourState::REWARDED) {
+                g.dialogueMgr.start(&g.ds_tomek_rewarded);
+            }
+        }
+        // Baba Sela
+        if (g.sela.zoneIndex == g.currentZoneIdx && g.sela.isNear(wx, wy)) {
+            if (g.sela.state == NPCFavourState::NOT_MET) {
+                g.dialogueMgr.start(&g.ds_sela_intro);
+            } else {
+                g.dialogueMgr.start(&g.ds_sela_rewarded);
+            }
         }
     }
 
@@ -2111,6 +2239,12 @@ static void render() {
             // Phase 2: economy objects
             drawRecycleStation(g.recycleStations[g.currentZoneIdx]);
             if (g.currentZoneIdx == 0) drawToolLibraryStation(g.toolLib);
+            // Phase 3: NPCs
+            if (g.currentZoneIdx == 0) g.marta.render(g.renderer, (int)g.camera.x, (int)g.camera.y);
+            if (g.currentZoneIdx >= 2) g.tomek.render(g.renderer, (int)g.camera.x, (int)g.camera.y);
+            if (g.currentZoneIdx >= 3) g.sela.render(g.renderer, (int)g.camera.x, (int)g.camera.y);
+            // Render dialogue box (on top of everything, below HUD)
+            g.dialogueMgr.render(g.renderer, WINDOW_W, WINDOW_H);
             drawHUD();
             drawToolLibraryUI();
             drawZoneGate();
@@ -2127,6 +2261,10 @@ static void render() {
             drawParticles();
             drawRecycleStation(g.recycleStations[g.currentZoneIdx]);
             if (g.currentZoneIdx == 0) drawToolLibraryStation(g.toolLib);
+            // Phase 3: NPCs
+            if (g.currentZoneIdx == 0) g.marta.render(g.renderer, (int)g.camera.x, (int)g.camera.y);
+            if (g.currentZoneIdx >= 2) g.tomek.render(g.renderer, (int)g.camera.x, (int)g.camera.y);
+            if (g.currentZoneIdx >= 3) g.sela.render(g.renderer, (int)g.camera.x, (int)g.camera.y);
             drawHUD();
             drawPaused();
             break;

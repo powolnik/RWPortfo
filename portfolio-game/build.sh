@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-command build for Zielony Pływak
-# Requires: Docker OR Emscripten SDK
+# Requires: Docker OR Emscripten SDK 
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"

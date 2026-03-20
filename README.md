@@ -1,7 +1,7 @@
 # Zielony Pływak (The Green Floater) 🌿
 
 A cosy 2D side-scrolling cleanup game built in C++ with SDL2, compiled to WebAssembly via Emscripten.
-
+ 
 ## Game Features
 - **3 Zones**: Beach, Forest, Wetlands — each with unique terrain and atmosphere
 - **Trash Cleanup**: Pick up 45 items of litter (bottles, cans, bags, tires, barrels)

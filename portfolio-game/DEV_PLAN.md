@@ -61,19 +61,19 @@
 - [x] Tilemap: coastal grass, flat with scattered rocks
 - [x] Litter set: 8–12 chemical drum objects
 - [x] Wildlife slots: Hare, Bee colony
-- [ ] Wildflower bloom visual trigger at BI 40%
+- [x] Wildflower bloom visual trigger at BI 40%
 
 ### 1.3 — Zone 4: Forest (unlock at BI 60%)
 - [x] Tilemap: birch grove, varied elevation
 - [x] Litter set: 8–12 abandoned machinery objects
 - [x] Wildlife slots: Deer, Woodpecker
-- [ ] Birch leaves render fully at BI 60%
+- [x] Birch leaves render fully at BI 60%
 
 ### 1.4 — Zone 5: Hill (unlock at BI 80%)
 - [x] Tilemap: rocky summit, narrow paths
 - [x] Litter set: old broadcast tower + surrounding debris
 - [x] Wildlife slots: Eagle, Lichen moss
-- [ ] Eagle circle overhead animation at BI 80%
+- [x] Eagle circle overhead animation at BI 80%
 
 ### 1.5 — Zone gate system
 - [x] BI threshold check before allowing zone entry

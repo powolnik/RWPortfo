@@ -60,6 +60,9 @@ static const char*     ZONE_DISPLAY_NAMES[NUM_ZONES]  = {
     "~ THE FOREST ~", "~ THE HILL ~"
 };
 // Colours used for zone gate line (locked vs unlocked)
+// Colors (solarpunk palette)
+struct Color { Uint8 r, g, b, a; };
+
 static const Color COL_GATE_LOCKED   = {180,  60,  60, 220};
 static const Color COL_GATE_UNLOCKED = { 60, 180,  80, 220};
 
@@ -71,9 +74,7 @@ constexpr int ZONE_FOREST_END    = 7680;
 constexpr int ZONE_WETLAND_START = 7680;   // placeholder — tilemap not yet loaded
 constexpr int ZONE_WETLAND_END   = 11520;
 
-// Colors (solarpunk palette)
-struct Color { Uint8 r, g, b, a; };
-
+// ─── Colors (below) ─────────────────────────────────────────────────────────
 static const Color COL_SKY_TOP     = {135, 206, 235, 255};
 static const Color COL_SKY_BOT     = {200, 230, 250, 255};
 static const Color COL_WATER       = { 40, 120, 180, 180};

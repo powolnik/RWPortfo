@@ -15,6 +15,7 @@
       min-height: 100vh;
       font-family: monospace;
       color: #7ec8a0;
+      gap: 0;
     }
     #game-container { position: relative; }
     canvas#canvas {
@@ -33,26 +34,86 @@
     }
     @keyframes blink { 0%,100%{opacity:0.25} 50%{opacity:1} }
     #status {
-      margin-top: 8px;
+      margin-top: 6px;
       font-size: 12px;
       color: #4a8a6a;
       text-align: center;
       min-height: 16px;
     }
-    #back {
-      margin-top: 16px;
-      color: #4a8a6a;
-      text-decoration: none;
-      font-size: 12px;
-      opacity: 0.5;
-    }
-    #back:hover { opacity: 1; }
     #spinner {
       font-size: 13px;
       color: #7ec8a0;
       margin-bottom: 8px;
       animation: blink 1.2s ease-in-out infinite;
     }
+
+    /* info panel */
+    #info {
+      display: none;
+      margin-top: 22px;
+      width: 100%;
+      max-width: 1280px;
+      display: none;
+      flex-direction: row;
+      justify-content: space-between;
+      gap: 32px;
+      padding: 0 4px;
+    }
+    #info.visible { display: flex; }
+    .info-block {
+      flex: 1;
+      border: 1px solid #1e3d2a;
+      border-radius: 4px;
+      padding: 12px 16px;
+      background: #0d1f14;
+    }
+    .info-block h3 {
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #4a8a6a;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #1e3d2a;
+      padding-bottom: 6px;
+    }
+    .controls-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 6px 14px;
+      align-items: center;
+    }
+    .key {
+      display: inline-block;
+      background: #1a3a2a;
+      border: 1px solid #2a6a4a;
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: 12px;
+      color: #9ee0b8;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .key-desc {
+      font-size: 12px;
+      color: #5a9a7a;
+    }
+    .about-text {
+      font-size: 12px;
+      color: #5a9a7a;
+      line-height: 1.7;
+    }
+    .about-text strong {
+      color: #9ee0b8;
+    }
+    #back {
+      margin-top: 16px;
+      margin-bottom: 20px;
+      color: #4a8a6a;
+      text-decoration: none;
+      font-size: 12px;
+      opacity: 0.5;
+    }
+    #back:hover { opacity: 1; }
   </style>
 </head>
 <body>
@@ -61,13 +122,39 @@
     <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
     <div id="hint" style="display:none">—— press enter to begin ——</div>
     <div id="status"></div>
-    <a id="back" href="../../">← back to portfolio</a>
   </div>
+
+  <div id="info">
+    <div class="info-block">
+      <h3>about</h3>
+      <p class="about-text">
+        You are <strong>Kai</strong>, a solarpunk wanderer exploring a polluted island.
+        <br><br>
+        Roam across <strong>3 zones</strong> — Beach, Forest &amp; Wetlands — picking up
+        trash to restore the island’s <strong>Eco Meter</strong>. As the land heals,
+        wildlife returns. Collect all <strong>45 pieces</strong> to win.
+      </p>
+    </div>
+    <div class="info-block">
+      <h3>controls</h3>
+      <div class="controls-grid">
+        <span class="key">A &nbsp;/&nbsp; ←</span><span class="key-desc">move left</span>
+        <span class="key">D &nbsp;/&nbsp; →</span><span class="key-desc">move right</span>
+        <span class="key">SPACE</span>          <span class="key-desc">jump</span>
+        <span class="key">E</span>              <span class="key-desc">pick up trash</span>
+        <span class="key">ESC</span>            <span class="key-desc">pause</span>
+        <span class="key">ENTER</span>          <span class="key-desc">confirm / start</span>
+      </div>
+    </div>
+  </div>
+
+  <a id="back" href="../../">← back to portfolio</a>
 
   <script type="text/javascript">
     var statusEl  = document.getElementById('status');
     var spinnerEl = document.getElementById('spinner');
     var hintEl    = document.getElementById('hint');
+    var infoEl    = document.getElementById('info');
 
     var Module = {
       canvas: (function() {
@@ -89,6 +176,7 @@
         if (left === 0) {
           spinnerEl.style.display = 'none';
           hintEl.style.display = 'block';
+          infoEl.classList.add('visible');
         }
       },
       onRuntimeInitialized: function() {
@@ -97,10 +185,11 @@
       }
     };
 
-    // Hide hint once player presses Enter (they're in the game)
+    // Hide hint + info once the player presses Enter (they’re in-game)
     window.addEventListener('keydown', function(e) {
       if (e.key === 'Enter' || e.keyCode === 13) {
         hintEl.style.display = 'none';
+        infoEl.classList.remove('visible');
       }
     });
 

@@ -16,9 +16,7 @@
       font-family: monospace;
       color: #7ec8a0;
     }
-    #game-container {
-      position: relative;
-    }
+    #game-container { position: relative; }
     canvas#canvas {
       display: block;
       border: 2px solid #2a5a3a;
@@ -59,20 +57,42 @@
   <script type="text/javascript">
     var statusEl  = document.getElementById('status');
     var spinnerEl = document.getElementById('spinner');
+    var canvas    = document.getElementById('canvas');
 
+    // Fire Enter on every available target; SDL2/Emscripten may listen on any of them
     function fireEnter() {
-      // SDL2/Emscripten captures key events from document/window
-      var evt = new KeyboardEvent('keydown', {
-        key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-        bubbles: true, cancelable: true
+      var targets = [document, window, canvas];
+      var downOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                       bubbles: true, cancelable: true };
+      var upOpts   = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                       bubbles: true, cancelable: true };
+      targets.forEach(function(t) {
+        if (t) t.dispatchEvent(new KeyboardEvent('keydown', downOpts));
       });
-      document.dispatchEvent(evt);
-      window.dispatchEvent(evt);
+      setTimeout(function() {
+        targets.forEach(function(t) {
+          if (t) t.dispatchEvent(new KeyboardEvent('keyup', upOpts));
+        });
+      }, 80);
+    }
+
+    // Retry every 400 ms for up to ~4 seconds after the module initialises.
+    // SDL2's game loop needs a few rendered frames before it processes events.
+    var autoStartAttempts = 0;
+    var autoStartMax = 10;
+    var autoStartTimer = null;
+
+    function scheduleAutoStart(delayMs) {
+      autoStartTimer = setTimeout(function attempt() {
+        if (autoStartAttempts >= autoStartMax) return;
+        autoStartAttempts++;
+        fireEnter();
+        autoStartTimer = setTimeout(attempt, 400);
+      }, delayMs);
     }
 
     var Module = {
       canvas: (function() {
-        var canvas = document.getElementById('canvas');
         canvas.addEventListener('webglcontextlost', function(e) {
           e.preventDefault();
         }, false);
@@ -89,8 +109,8 @@
       monitorRunDependencies: function(left) {
         if (left === 0) {
           spinnerEl.style.display = 'none';
-          // Fire after deps resolved, with a short delay for first frame
-          setTimeout(fireEnter, 200);
+          // Start retrying after 300 ms; the game loop needs a few frames
+          scheduleAutoStart(300);
         }
       },
       onRuntimeInitialized: function() {
@@ -98,6 +118,15 @@
         statusEl.textContent = '';
       }
     };
+
+    // Also cancel retries if the user interacts (they've started themselves)
+    window.addEventListener('keydown', function() {
+      if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
+    }, { once: true });
+    canvas.addEventListener('click', function() {
+      if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
+    }, { once: true });
+
     window.onerror = function(msg) {
       statusEl.textContent = 'Error: ' + msg;
       statusEl.style.color = '#e06060';

@@ -90,7 +90,7 @@
       margin-bottom: 22px;
     }
 
-    /* back button */
+    /* back button (shown only on error) */
     #back-btn {
       display: none;
       margin-top: 28px;
@@ -194,16 +194,15 @@ function addLine(cls, text) {
 }
 
 const SEQ = [
-  { fn: () => addLine('cmd',  'radek@portfolio:~$ ./portfolio-game.wasm'),  delay: 0   },
-  { fn: () => addLine('info', 'Loading WebAssembly runtime...'),             delay: 320 },
-  { fn: () => { progWrap.style.display='block'; animProg(0, 100, 1200); },  delay: 400 },
-  { fn: () => addLine('err',  '[ERROR]  build artifact not found: game.wasm'), delay: 1700 },
-  { fn: () => addLine('warn', '[WARN ]  game is still under construction'), delay: 180 },
-  { fn: () => addLine('info', 'Expected stack:  C++ · SDL2 · Emscripten'), delay: 240 },
-  { fn: () => addLine('info', 'Status:          work in progress 🔧'),      delay: 200 },
-  { fn: () => addLine('cmd',  'radek@portfolio:~$ echo "check back soon."'), delay: 350 },
-  { fn: () => addLine('ok',   'check back soon.'),                          delay: 0   },
-  { fn: showBack,                                                            delay: 400 },
+  { fn: () => addLine('cmd',  'radek@portfolio:~$ ./portfolio-game.wasm'),      delay: 0   },
+  { fn: () => addLine('info', 'Loading WebAssembly runtime...'),                 delay: 320 },
+  { fn: () => { progWrap.style.display='block'; animProg(0, 100, 1200); },      delay: 400 },
+  { fn: () => addLine('ok',   '[OK   ]  index.wasm loaded successfully'),        delay: 1700 },
+  { fn: () => addLine('ok',   '[OK   ]  SDL2 context initialized'),              delay: 200 },
+  { fn: () => addLine('info', 'Stack:    C++ · SDL2 · Emscripten'),              delay: 240 },
+  { fn: () => addLine('ok',   'Launching Zielony Pływ\u0061k... 🌿'),           delay: 280 },
+  { fn: () => addLine('cmd',  'radek@portfolio:~$ open build/index.html'),       delay: 380 },
+  { fn: launch,                                                                   delay: 700 },
 ];
 
 function animProg(from, to, dur) {
@@ -212,15 +211,15 @@ function animProg(from, to, dur) {
     const p = Math.min((now - start) / dur, 1);
     const v = from + (to - from) * p;
     progBar.style.width = v + '%';
-    progLbl.textContent = v < 100 ? `loading... ${Math.round(v)}%` : `error — see above`;
+    progLbl.textContent = v < 100 ? `loading... ${Math.round(v)}%` : `ready!`;
     if (p < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
 }
 
-function showBack() {
+function launch() {
   cursor.style.display = 'none';
-  backBtn.style.display = 'inline-block';
+  window.location.href = './build/index.html';
 }
 
 let i = 0;
